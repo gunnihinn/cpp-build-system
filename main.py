@@ -5,9 +5,11 @@ import configparser
 import hashlib
 import json
 import logging
+import multiprocessing
 import os.path
 import re
 import shutil
+import sys
 import sqlite3
 import subprocess
 import tempfile
@@ -143,50 +145,56 @@ def hash_files(sources: Dict[str, Source]) -> Dict[str, bytes]:
     return digests
 
 
-def hash_source(source: Source, config, file_hashes: Dict[str, bytes]):
-    m = hashlib.sha256()
-    m.update(file_hashes[source.filename])
-    m.update(config.hash())
-    for fn in sorted(source.local):
-        m.update(file_hashes[fn])
+class Cache:
 
-    return m.digest()
+    def __init__(self, db, file_hashes: Dict[str, bytes]):
+        self.db = db
+        self.file_hashes = file_hashes
+
+    def digest(self, source: Source, config: Config) -> bytes:
+        m = hashlib.sha256()
+        m.update(self.file_hashes[source.filename])
+        m.update(config.hash())
+        for fn in sorted(source.local):
+            m.update(self.file_hashes[fn])
+
+        return m.digest()
+
+    def lookup(self, key) -> Tuple[int, bytes]:
+        row = self.db.execute("SELECT id, value FROM builds WHERE key = ?", (key,)).fetchone()
+        if row is None:
+            return None
+
+        _id, val = (row[0], row[1])
+        now = int(time.time())
+        with self.db as db:
+            db.execute(
+                "UPDATE builds SET last_used = ? WHERE id = ?",
+                (now, _id),
+            )
+
+        return (_id, val)
+
+    def insert(self, key: bytes, val: bytes):
+        with self.db as db:
+            db.execute("INSERT INTO builds(key, value) VALUES (?, ?)", (key, val))
 
 
-def make(db, build_dir, source, config, file_hashes):
-    key = hash_source(source, config, file_hashes)
-    obj = source.target()
-    if obj is None:
-        return
+def make(task):
+    outfile, key, args = task
+    logging.info(f"building {outfile}")
+    subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8", check=True)
+    with open(outfile, "rb") as fh:
+        val = fh.read()
 
-    filename = os.path.join(build_dir, obj)
-    dirname = os.path.dirname(filename)
-    os.makedirs(dirname, exist_ok=True)
-
-    row = db.execute("SELECT id, value FROM builds WHERE key = ?", (key,)).fetchone()
-    if row is not None:
-        logging.info(f"{filename} in cache")
-        _id = row[0]
-        val = row[1]
-        with open(filename, "wb") as fh:
-            fh.write(val)
-        db.execute(
-            "UPDATE builds SET last_used = ? WHERE id = ?",
-            (int(time.time()), _id),
-        )
-    else:
-        logging.info(f"building {filename}")
-        args = ["g++", "-c"] + config.cflags + ["-o", filename, source.filename]
-        subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8", check=True)
-        with open(filename, "rb") as fh:
-            val = fh.read()
-        db.execute("INSERT INTO builds(key, value) VALUES (?, ?)", (key, val))
+    return (outfile, key, val)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cache", default=".cache.db", help="Build cache")
     parser.add_argument("--config", help="Build system config file")
+    parser.add_argument("--jobs", type=int, default=6, help="Number of CPUs to use")
     parser.add_argument("--makefile", help="Generate Makefile")
     parser.add_argument("source", help="Source to build")
     parser.add_argument("binary", help="Binary name")
@@ -208,13 +216,38 @@ if __name__ == "__main__":
         print(generate_makefile(sources, out=args.binary))
         sys.exit(0)
 
-    build = tempfile.TemporaryDirectory()
-    file_hashes = hash_files(sources)
-    with db as db:
-        objects = []
-        for source in sources.values():
-            make(db, build.name, source, config, file_hashes)
-            objects.append(os.path.join(build.name, source.target()))
+    cache = Cache(db, hash_files(sources))
 
-        args = ["g++"] + config.cflags + config.ldflags + ["-o", args.binary] + objects
-        subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8", check=True)
+    build = tempfile.TemporaryDirectory()
+    objects = []
+    tasks = []
+    for source in sources.values():
+        obj = source.target()
+        if obj is None:
+            continue
+
+        key = cache.digest(source, config)
+        outfile = os.path.join(build.name, obj)
+        dirname = os.path.dirname(outfile)
+        os.makedirs(dirname, exist_ok=True)
+
+        res = cache.lookup(key)
+        if res is not None:
+            logging.info(f"{outfile} in cache")
+            _id, val = res
+            with open(outfile, "wb") as fh:
+                fh.write(val)
+            objects.append(outfile)
+        else:
+            cmd = ["g++", "-c"] + config.cflags + ["-o", outfile, source.filename]
+            tasks.append((outfile, key, cmd))
+
+    with multiprocessing.Pool(processes=args.jobs) as pool:
+        results = pool.map(make, tasks)
+
+    for outfile, key, val in results:
+        cache.insert(key, val)
+        objects.append(outfile)
+
+    args = ["g++"] + config.cflags + config.ldflags + ["-o", args.binary] + objects
+    subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8", check=True)
