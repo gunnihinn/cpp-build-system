@@ -31,3 +31,8 @@ Its output should be our input.
 Umm... the preprocessor output is a bit odd.
 Maybe think about this some more.
 Don't need it for a proof of concept anyway.
+
+A source file depends on some set of header files.
+These header files may have corresponding source files that need to be compiled.
+A change in a header file should trigger a recompilation of a source file that includes it:
+The change may have been to something like `#define FOO 1` and the source used `FOO`.
