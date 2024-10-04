@@ -46,9 +46,6 @@ class Config:
 
 
 class Source:
-    # TODO: This should become a tree; the .local need to become other Source objects
-
-    re_system = re.compile(r"#include\s+<(.*)>")
     re_local = re.compile(r"#include\s+\"(.*)\"")
 
     def __init__(self, filename: str, local, target=None):
@@ -190,7 +187,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cache", default=".cache.db", help="Build cache")
     parser.add_argument("--config", help="Build system config file")
-    parser.add_argument("--out", default="main", help="Name of build output")
+    parser.add_argument("--makefile", help="Generate Makefile")
     parser.add_argument("source", help="Source to build")
     parser.add_argument("binary", help="Binary name")
     args = parser.parse_args()
@@ -207,7 +204,9 @@ if __name__ == "__main__":
             config = Config(**json.load(fh))
 
     sources = find_local_sources(args.source)
-    # print(generate_makefile(sources, out=args.out))
+    if args.makefile:
+        print(generate_makefile(sources, out=args.binary))
+        sys.exit(0)
 
     build = tempfile.TemporaryDirectory()
     file_hashes = hash_files(sources)
