@@ -12,7 +12,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
-from typing import *
+from typing import Dict, List, Optional, Tuple
 
 
 schema = """
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS builds (
 
 class Config:
 
-    def __init__(self, cflags: List[str] = None, ldflags: List[str] = None):
+    def __init__(self, cflags: Optional[List[str]] = None, ldflags: Optional[List[str]] = None):
         self.cflags = cflags or []
         self.ldflags = ldflags or []
         self._hash = None
@@ -70,7 +70,7 @@ class Source:
         return None
 
     @staticmethod
-    def parse(filename: str, prefix: str = "", target: str = None):
+    def parse(filename: str, prefix: str = "", target: Optional[str] = None):
         local = set()
         with open(filename) as fh:
             for line in fh:
@@ -120,8 +120,8 @@ def generate_makefile(sources: Dict[str, Source], out):
 
     objs = " ".join(objects.values())
     lines.append(f"objects := {objs}")
-    lines.append(f"%.o: %.cpp\n\t$(CC) $(CFLAGS) -c -o $@ $^")
-    lines.append(f"%.o: %.cc\n\t$(CC) $(CFLAGS) -c -o $@ $^")
+    lines.append("%.o: %.cpp\n\t$(CC) $(CFLAGS) -c -o $@ $^")
+    lines.append("%.o: %.cc\n\t$(CC) $(CFLAGS) -c -o $@ $^")
     lines.append(f"{out}: $(objects)\n\t$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^")
 
     return "\n\n".join(lines)
@@ -158,7 +158,7 @@ class Cache:
 
         return m.digest()
 
-    def lookup(self, key) -> Tuple[int, bytes]:
+    def lookup(self, key) -> Optional[Tuple[int, bytes]]:
         row = self.db.execute("SELECT id, value FROM builds WHERE key = ?", (key,)).fetchone()
         if row is None:
             return None
@@ -233,8 +233,8 @@ if __name__ == "__main__":
         if res is not None:
             logging.info(f"{outfile} in cache")
             _id, val = res
-            with open(outfile, "wb") as fh:
-                fh.write(val)
+            with open(outfile, "wb") as f:
+                f.write(val)
             objects.append(outfile)
         else:
             cmd = ["g++", "-c"] + config.cflags + ["-o", outfile, source.filename]
@@ -247,5 +247,5 @@ if __name__ == "__main__":
         cache.insert(key, val)
         objects.append(outfile)
 
-    args = ["g++"] + config.cflags + config.ldflags + ["-o", args.binary] + objects
-    subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8", check=True)
+    cmd = ["g++"] + config.cflags + config.ldflags + ["-o", args.binary] + objects
+    subprocess.run(cmd, stdout=subprocess.PIPE, encoding="utf-8", check=True)
