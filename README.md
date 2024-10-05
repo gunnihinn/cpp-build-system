@@ -1,38 +1,48 @@
-# Notes on a cpp build system
+# C/C++ build system
 
-Parse `include` directives in source.
-There are two kinds:
+`cbs` is a simple C/C++ build system.
 
-- `include "foo.h"`
-- `include <foo>`
+You give it a configuration file with the compiler and linker options to use and point it at a source file you would like to make into an executable.
+`cbs` will read the `include` directives in the file recursively to determine what object files to build and link them together.
+It caches intermediate build artifacts based on their content, their dependencies and the configuration used to build them.
+It builds its artifacts in parallel by default.
 
-The first are local to the project, the second are system headers.
+`cbs` does not try to figure out where system or third party libraries live.
+Pass the relevant `-L` and `-l` linker flags in as configuration.
 
-For the first, check if there is a corresponding `cpp` or `cc` file.
-If so create a target of the form:
+## Use
 
-```
-foo.o: foo.cpp
-```
-
-For the second, check if the header file exists under `/usr/include`.
-If it is under `c++`, it is a compiler header and we don't have to do anything.
-
-If it is in, for example `/usr/include/bar/foo.h`, and `/usr/lib(64)?/bar.{a,so}` exists, then it is a third party library and we have to add a linker command of the form:
+Compile `source` into `binary`:
 
 ```
--lbar
+cbs [OPTION] source binary
 ```
 
-Otherwise it is a compiler header and we do nothing.
+Run `cbs --help` to see the available options.
 
-Should probably run the preprocessor to deal with conditional includes.
-Its output should be our input.
-Umm... the preprocessor output is a bit odd.
-Maybe think about this some more.
-Don't need it for a proof of concept anyway.
+## Configuration
 
-A source file depends on some set of header files.
-These header files may have corresponding source files that need to be compiled.
-A change in a header file should trigger a recompilation of a source file that includes it:
-The change may have been to something like `#define FOO 1` and the source used `FOO`.
+`cbs` reads compiler and linker flags from a JSON configuration file of the form:
+
+```json
+{
+  "cflags": [
+    "-std=c11"
+    , "-Werror"
+  ]
+  , "ldflags": [
+    "-L/usr/lib64"
+    , "-lsqlite"
+  ]
+}
+```
+
+## But why?
+
+I never sat down to learn C or C++, and then got a job where I had to write C++, so I didn't understand how the build process for those really works.
+CMake does not help with understanding that, and after writing enough Make to be dangerous I thought this wasn't as complicated as it seemed.
+This project is an attempt to justify that thought.
+
+## License
+
+`cbs` is relased under the GPL v3.
