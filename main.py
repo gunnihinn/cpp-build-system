@@ -181,9 +181,11 @@ class Cache:
 def make(task):
     outfile, key, args = task
     logging.info(f"building {outfile}")
-    subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8", check=True)
+    proc = subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8", check=True)
     with open(outfile, "rb") as fh:
         val = fh.read()
+    if proc.stderr:
+        log.warning(proc.stderr)
 
     return (outfile, key, val)
 
@@ -248,4 +250,6 @@ if __name__ == "__main__":
         objects.append(outfile)
 
     cmd = ["g++"] + config.cflags + config.ldflags + ["-o", args.binary] + objects
-    subprocess.run(cmd, stdout=subprocess.PIPE, encoding="utf-8", check=True)
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, encoding="utf-8", check=True)
+    if proc.stderr:
+        log.warning(proc.stderr)

@@ -1,3 +1,22 @@
+[build-system]
+requires = [ "setuptools" ]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cpp-build-system"
+description = "A C/C++ build system"
+version = "0.1"
+requires-python = ">= 3.6"
+readme = "README.md"
+license = {file = "LICENSE"}
+
+authors = [
+  {name = "Gunnar Þór Magnússon", email = "gunnar@magnusson.io"},
+]
+
+[project.scripts]
+cbs = "main:main"
+
 [tool.black]
 line-length = 120
 target-version = ['py36']
