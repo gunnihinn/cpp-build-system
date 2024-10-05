@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import multiprocessing
+import os
 import os.path
 import re
 import sys
@@ -185,14 +186,23 @@ def make(task):
     with open(outfile, "rb") as fh:
         val = fh.read()
     if proc.stderr:
-        log.warning(proc.stderr)
+        logging.warning(proc.stderr)
 
     return (outfile, key, val)
 
 
+def get_filename(filename: Optional[str]) -> str:
+    if filename is not None:
+        return filename
+
+    xdg_cache = os.getenv("XDG_CACHE_HOME", os.path.join(os.environ["HOME"], ".cache"))
+    os.makedirs(xdg_cache, exist_ok=True)
+    return os.path.join(xdg_cache, "cbs.db")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cache", default=".cache.db", help="Build cache")
+    parser.add_argument("--cache", help="Build cache")
     parser.add_argument("--config", help="Build system config file")
     parser.add_argument("--jobs", type=int, default=6, help="Number of CPUs to use")
     parser.add_argument("--makefile", help="Generate Makefile")
@@ -202,7 +212,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
-    db = sqlite3.connect(args.cache)
+    db = sqlite3.connect(get_filename(args.cache))
     with db as db:
         db.execute(schema)
 
@@ -252,4 +262,4 @@ if __name__ == "__main__":
     cmd = ["g++"] + config.cflags + config.ldflags + ["-o", args.binary] + objects
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, encoding="utf-8", check=True)
     if proc.stderr:
-        log.warning(proc.stderr)
+        logging.warning(proc.stderr)
