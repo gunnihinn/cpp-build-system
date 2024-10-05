@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
-import configparser
 import hashlib
 import json
 import logging
 import multiprocessing
 import os.path
 import re
-import shutil
 import sys
 import sqlite3
 import subprocess
